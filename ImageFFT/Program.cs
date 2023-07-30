@@ -7,60 +7,62 @@ namespace ImageFFT;
 
 internal static class Program
 {
-    private const float CorruptScale = 100f;
-    private const float CorruptMin = 40;
-    private const float CorruptMax = 60;
+    /* All Corruption params (except CorruptPotential) are in percent */
+    private const float CorruptAmount = 0;
+    private const int CorruptPotential = 64;
+    private const float CorruptMinFreq = 40;
+    private const float CorruptMaxFreq = 60;
 
     private const bool ParalellFFT = true;
 
     private static int _width;
     private static int _height;
 
-    private static string _keys = "";
+    private static double _magLogBase;
+    private static double _phaLogBase;
+
     private static string _name = "";
+    
+    private static ushort _source;
+    private static ushort _operation;
 
     private static void Main()
     {
+        Console.Clear();
         while (true)
         {
-            if (_keys == "")
+
+            Console.ForegroundColor = ConsoleColor.Gray;
+            Console.WriteLine("Operation(s):");
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine("  I = Load Image");
+            Console.WriteLine("  D = Load Data");
+            Console.WriteLine("  D = Generate Data");
+            Console.WriteLine("  O = Generate Output");
+            Console.WriteLine("  A = Generate Analysis");
+            Console.ForegroundColor = ConsoleColor.Gray;
+            Console.WriteLine("Example:");
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine("  do,image | \"do\" =  Load Data, Generate Output,   \"image\" = Image Name");
+            Console.WriteLine("  ia13     | \"ia\" = Load Image, Generate Analysis, \"13\" =    Image Name");
+            Console.ForegroundColor = ConsoleColor.White;
+            var command = Console.ReadLine() ?? throw new Exception("Invalid Command");
+
+            _name = command[2..];
+            _source = char.ToUpper(command[0]) switch
             {
-                Console.WriteLine("Operation(s):");
-                Console.WriteLine("  D = Generate data.bytes");
-                Console.WriteLine("  O = Generate output.png");
-                Console.WriteLine("  A = Generate analysis.png");
-                Console.WriteLine("Example:");
-                Console.WriteLine("  do,image | da = Generate data/analysis, image = Image Name");
-                Console.WriteLine("  da13 | da = Generate data/output, 14 = Image Name");
-                var command = Console.ReadLine().ToUpper();
-                
-                var i = 0;
-                foreach (var c in command)
-                {
-                    if (c == ',')
-                    {
-                        _name = command[(i+1)..];
-                        _keys = command[..i];
+                'I' => 0,
+                'D' => 1,
+                _ => throw new Exception("Invalid Command")
+            };
 
-                        break;
-                    }
-                    
-                    if (c is not ('D' or 'O' or 'A'))
-                    {
-                        _name = command[i..];
-                        _keys = command[..i];
-                        
-                        break;
-                    }
-
-                    i++;
-                }
-            }
-            
-            if (_keys[0] is not ('D' or 'O' or 'A')) throw new Exception("Invalid Operation");
-            
-            
-            ushort operation;
+            _operation = char.ToUpper(command[1]) switch
+            {
+                'D' => 0,
+                'O' => 1,
+                'A' => 2,
+                _ => throw new Exception("Invalid Command")
+            };
 
             #region Variable Creation
 
@@ -76,22 +78,15 @@ internal static class Program
             Complex[,] gData;
             Complex[,] bData;
 
-            // size of one dimension (r,g,b / mag, pha) * 8 (bits in a double (64-bit float))
+            // size of one dimension (r,g,b / mag,pha) * 8 (bits in a double)
             int dimSize;
 
             #endregion
 
-            switch (_keys[0])
+            switch (_source)
             {
-                case 'D': // gen data 
+                case 0: // load image
                 {
-                    operation = 0;
-
-                    if (_keys is [_, 'A', ..])
-                    {
-                        operation = 3;
-                    }
-                    
                     var imageStream = File.Open(@"Images\" + _name + ".png", FileMode.Open);
                     var imageFile = Image.Load(imageStream);
                     imageStream.Close();
@@ -127,12 +122,10 @@ internal static class Program
 
                     break;
                 }
-                case 'O' or 'A': // gen output/analysis 
+                case 1: // load data.bytes
                 {
-                    operation = (ushort)(_keys[0] == 'O' ? 1 : 2);
 
                     var dataStream = File.Open(@"Images\" + _name + @"\data.bytes", FileMode.Open);
-
 
                     var inputBytesArray0 = new byte[8];
                     dataStream.Read(inputBytesArray0, 0, 8);
@@ -142,8 +135,6 @@ internal static class Program
                     _height = BitConverter.ToInt32(inputBytes0[4..8]);
 
                     dimSize = _width * _height * 8;
-
-                    //Console.WriteLine(dimSize);
 
                     var inputBytesArray1 = new byte[dimSize];
                     var inputBytesArray2 = new byte[dimSize];
@@ -167,9 +158,6 @@ internal static class Program
                     var inputBytes5 = new Span<byte>(inputBytesArray5);
                     var inputBytes6 = new Span<byte>(inputBytesArray6);
 
-                    // _width = BitConverter.ToInt32(inputBytes0[..4]);
-                    // _height = BitConverter.ToInt32(inputBytes0[4..8]);
-
                     rMag = new double[_width, _height];
                     gMag = new double[_width, _height];
                     bMag = new double[_width, _height];
@@ -182,39 +170,99 @@ internal static class Program
                     gData = new Complex[_width, _height];
                     bData = new Complex[_width, _height];
 
-                    // dimSize = _width * _height * 8;
-
-                    /*
-                if (operation == 1) // Corruption 
-                {
-                    Console.WriteLine("Corrupting");
-                    var random = new Random();
-
-                    var corruptMin = (int)(CorruptMin * ((float)dimSize / 100) / 8);
-                    var corruptMax = (int)(CorruptMax * ((float)dimSize / 100) / 8);
-                    var range = (corruptMax - corruptMin);
-
-                    for (var corrI = 0; corrI < ((float)range / 100) * CorruptScale; corrI++)
+                    if (_operation == 1) // Corruption 
                     {
-                        var index = random.Next(corruptMin / 8, corruptMax / 8) * 8;
+                        Console.WriteLine("Corrupting");
+                        var random = new Random();
 
-                        for (var j = 0; j < 6; j++)
+                        var corruptMin = (int)(CorruptMinFreq * ((float)dimSize / 100) / 8);
+                        var corruptMax = (int)(CorruptMaxFreq * ((float)dimSize / 100) / 8);
+                        var range = (corruptMax - corruptMin);
+
+                        for (var corrI = 0; corrI < ((float)range / 100) * CorruptAmount; corrI++)
                         {
-                            var currentIndex = index + (j * dimSize);
+                            var index = random.Next(corruptMin / 8, corruptMax / 8) * 8;
 
-                            var value = BitConverter.ToDouble(inputBytes[currentIndex..(currentIndex + 8)]);
-
-                            value += random.Next(-64, 64);
-
-                            var newBytes = BitConverter.GetBytes(value);
-                            for (var k = 0; k < 8; k++)
+                            for (var j = 0; j < 6; j++)
                             {
-                                inputBytes[currentIndex + k] = newBytes[k];
+                                var dim = random.Next(0, 5);
+
+                                var value = dim switch
+                                {
+                                    0 => BitConverter.ToDouble(inputBytes1[index..(index + 8)]),
+                                    1 => BitConverter.ToDouble(inputBytes2[index..(index + 8)]),
+                                    2 => BitConverter.ToDouble(inputBytes3[index..(index + 8)]),
+                                    3 => BitConverter.ToDouble(inputBytes4[index..(index + 8)]),
+                                    4 => BitConverter.ToDouble(inputBytes5[index..(index + 8)]),
+                                    5 => BitConverter.ToDouble(inputBytes6[index..(index + 8)]),
+                                    _ => 0
+                                };
+
+                                value += random.Next(-CorruptPotential, CorruptPotential);
+
+                                var newBytes = BitConverter.GetBytes(value);
+
+                                switch (dim)
+                                {
+                                    case 0:
+                                    {
+                                        for (var k = 0; k < 8; k++)
+                                        {
+                                            inputBytes1[index + k] = newBytes[k];
+                                        }
+
+                                        break;
+                                    }
+                                    case 1:
+                                    {
+                                        for (var k = 0; k < 8; k++)
+                                        {
+                                            inputBytes2[index + k] = newBytes[k];
+                                        }
+
+                                        break;
+                                    }
+                                    case 2:
+                                    {
+                                        for (var k = 0; k < 8; k++)
+                                        {
+                                            inputBytes3[index + k] = newBytes[k];
+                                        }
+
+                                        break;
+                                    }
+                                    case 3:
+                                    {
+                                        for (var k = 0; k < 8; k++)
+                                        {
+                                            inputBytes4[index + k] = newBytes[k];
+                                        }
+
+                                        break;
+                                    }
+                                    case 4:
+                                    {
+                                        for (var k = 0; k < 8; k++)
+                                        {
+                                            inputBytes5[index + k] = newBytes[k];
+                                        }
+
+                                        break;
+                                    }
+                                    case 5:
+                                    {
+                                        for (var k = 0; k < 8; k++)
+                                        {
+                                            inputBytes6[index + k] = newBytes[k];
+                                        }
+
+                                        break;
+                                    }
+                                }
+
                             }
                         }
                     }
-                }
-                */
 
                     var i1 = 0;
                     for (var x = 0; x < _width; x++)
@@ -236,15 +284,17 @@ internal static class Program
                 }
                 default:
                 {
-                    throw new Exception("Invalid Operation");
+                    throw new Exception("Invalid Command");
                 }
             }
 
             var data = new FFTData(rMag, gMag, bMag, rPha, gPha, bPha, rData, gData, bData);
 
-            if (operation != 2) data = operation is 0 or 3 ? FFT3Channel2D(data, _width, _height).Result : iFFT3Channel2D(data, _width, _height).Result;
-            
-            
+            data = _source == 0
+                ? FFT3Channel2D(data, _width, _height).Result
+                : iFFT3Channel2D(data, _width, _height).Result;
+
+
             var dir = @"Images\" + _name;
             if (!Directory.Exists(dir))
             {
@@ -257,7 +307,7 @@ internal static class Program
                 }
             }
 
-            switch (operation)
+            switch (_operation)
             {
                 case 0: // gen data 
                 {
@@ -293,7 +343,8 @@ internal static class Program
                     Console.WriteLine("Saving");
                     try
                     {
-                        using var stream = new FileStream($"Images/{_name}/data.bytes", FileMode.Create, FileAccess.Write);
+                        using var stream = new FileStream($"Images/{_name}/data.bytes", FileMode.Create,
+                            FileAccess.Write);
                         stream.Write(bytes0);
                         stream.Write(bytes1);
                         stream.Write(bytes2);
@@ -317,7 +368,8 @@ internal static class Program
                     {
                         for (var y = 0; y < _height; y++)
                         {
-                            var reCol = Color.FromRgb((byte)data.RCom()[x, y].Real, (byte)data.GCom()[x, y].Real, (byte)data.BCom()[x, y].Real);
+                            var reCol = Color.FromRgb((byte)data.RCom()[x, y].Real, (byte)data.GCom()[x, y].Real,
+                                (byte)data.BCom()[x, y].Real);
 
                             outputImage[x, y] = reCol;
                         }
@@ -328,9 +380,9 @@ internal static class Program
 
                     break;
                 }
-                case 2 or 3: // gen analysis
+                case 2: // gen analysis
                 {
-                    if (operation == 3)
+                    if (_source == 0) // data from image, get fromm FFT results
                     {
                         rMag = data.RMag();
                         gMag = data.GMag();
@@ -339,117 +391,59 @@ internal static class Program
                         gPha = data.GPha();
                         bPha = data.BPha();
                     }
-                    
-                    var analysisMagImage = new Image<Rgba32>(_width, _height, Color.Black);
-                    var analysisPhaImage = new Image<Rgba32>(_width, _height, Color.Black);
+
 
                     var magMax = Math.Max(Math.Max(rMag.Max(), gMag.Max()), bMag.Max());
-                    
+
                     var phaOffset = -Math.Min(Math.Min(rPha.Min(), gPha.Min()), bPha.Min()) + 1;
                     var phaMax = Math.Max(Math.Max(rPha.Max(), gPha.Max()), bPha.Max()) + phaOffset;
 
-                    var magLogBase = Math.Pow(magMax, 1d / (_height - 1));
-                    var phaLogBase = Math.Pow(phaMax, 1d / (_height - 1));
-                    
+                    _magLogBase = Math.Pow(magMax, 1d / (_height - 1));
+                    _phaLogBase = Math.Pow(phaMax, 1d / (_height - 1));
+
+                    var analysisMagImage = new Image<Rgb48>(_width, _height, new Rgb48(0, 0, 0));
+                    var analysisPhaImage = new Image<Rgb48>(_width, _height, new Rgb48(0, 0, 0));
+
+                    Console.ForegroundColor = ConsoleColor.Red;
                     for (var x = 0; x < (float)_width; x++)
                     {
                         for (var y = 0f; y < _height; y++)
                         {
                             #region Magnitude
 
-                            #region Red
+                            var scaled = MagHeightCalculate(rMag[x, (int)y] + 1);
+                            var color = analysisMagImage[x, _height - scaled];
+                            analysisMagImage[x, _height - scaled] = new Rgb48(65535, color.G, color.B);
 
-                            var rMagValue = rMag[x, (int)y] + 1;
-                            var rMagScaledValue = (int)Math.Floor(Math.Log(rMagValue, magLogBase));
-                            if (rMagScaledValue < 0) rMagScaledValue = Math.Abs(rMagScaledValue);
-                            rMagScaledValue++;
+                            scaled = MagHeightCalculate(gMag[x, (int)y] + 1);
+                            color = analysisMagImage[x, _height - scaled];
+                            analysisMagImage[x, _height - scaled] = new Rgb48(color.R, 65535, color.B);
 
-                            if (rMagScaledValue > _height || rMagScaledValue == 0) Console.WriteLine($"RMAG {rMagValue}, {rMagScaledValue}");
-                            var color = analysisMagImage[x, _height - rMagScaledValue];
-
-                            analysisMagImage[x, _height - rMagScaledValue] = Color.FromRgb(255, color.G, color.B);
-
-                            #endregion
-
-                            #region Green
-
-                            var gMagValue = gMag[x, (int)y] + 1;
-                            var gMagScaledValue = (int)Math.Floor(Math.Log(gMagValue, magLogBase));
-                            if (gMagScaledValue < 0) gMagScaledValue = Math.Abs(gMagScaledValue);
-                            gMagScaledValue++;
-
-                            if (gMagScaledValue > _height || gMagScaledValue == 0) Console.WriteLine($"GMAG {gMagValue}, {gMagScaledValue}");
-                            color = analysisMagImage[x, _height - gMagScaledValue];
-
-                            analysisMagImage[x, _height - gMagScaledValue] = Color.FromRgb(color.R, 255, color.B);
-
-                            #endregion
-
-                            #region Blue
-
-                            var bMagValue = bMag[x, (int)y] + 1;
-                            var bMagScaledValue = (int)Math.Floor(Math.Log(bMagValue, magLogBase));
-                            if (bMagScaledValue < 0) bMagScaledValue = Math.Abs(bMagScaledValue);
-                            bMagScaledValue++;
-
-                            if (bMagScaledValue > _height || bMagScaledValue == 0) Console.WriteLine($"BMAG {bMagValue}, {bMagScaledValue}");
-                            color = analysisMagImage[x, _height - bMagScaledValue];
-
-                            analysisMagImage[x, _height - bMagScaledValue] = Color.FromRgb(color.R, color.G, 255);
-
-                            #endregion
+                            scaled = MagHeightCalculate(bMag[x, (int)y] + 1);
+                            color = analysisMagImage[x, _height - scaled];
+                            analysisMagImage[x, _height - scaled] = new Rgb48(color.R, color.G, 65535);
 
                             #endregion
 
                             #region Phase
 
-                            #region Red
+                            scaled = PhaHeightCalculate(rPha[x, (int)y] + phaOffset);
+                            color = analysisPhaImage[x, _height - scaled];
+                            analysisPhaImage[x, _height - scaled] = new Rgb48(65535, color.G, color.B);
 
-                            var rPhaValue = rPha[x, (int)y] + phaOffset;
-                            var rPhaScaledValue = (int)Math.Floor(Math.Log(rPhaValue, phaLogBase));
-                            if (rPhaScaledValue < 0) rPhaScaledValue = Math.Abs(rPhaScaledValue);
-                            rPhaScaledValue++;
+                            scaled = PhaHeightCalculate(gPha[x, (int)y] + phaOffset);
+                            color = analysisPhaImage[x, _height - scaled];
+                            analysisPhaImage[x, _height - scaled] = new Rgb48(color.R, 65535, color.B);
 
-                            if (rPhaScaledValue > _height || rPhaScaledValue == 0) Console.WriteLine($"RPHA {rPhaValue}, {rPhaScaledValue}");
-
-                            color = analysisPhaImage[x, _height - rPhaScaledValue];
-
-                            analysisPhaImage[x, _height - rPhaScaledValue] = Color.FromRgb(255, color.G, color.B);
-
-                            #endregion
-
-                            #region Green
-
-                            var gPhaValue = gPha[x, (int)y] + phaOffset;
-                            var gPhaScaledValue = (int)Math.Floor(Math.Log(gPhaValue, phaLogBase));
-                            if (gPhaScaledValue < 0) gPhaScaledValue = Math.Abs(gPhaScaledValue);
-                            gPhaScaledValue++;
-
-                            if (gPhaScaledValue > _height || gPhaScaledValue == 0) Console.WriteLine($"GPHA {gPhaValue}, {gPhaScaledValue}");
-                            color = analysisPhaImage[x, _height - gPhaScaledValue];
-
-                            analysisPhaImage[x, _height - gPhaScaledValue] = Color.FromRgb(color.R, 255, color.B);
-
-                            #endregion
-
-                            #region Blue
-
-                            var bPhaValue = bPha[x, (int)y] + phaOffset;
-                            var bPhaScaledValue = (int)Math.Floor(Math.Log(bPhaValue, phaLogBase));
-                            if (bPhaScaledValue < 0) bPhaScaledValue = Math.Abs(bPhaScaledValue);
-                            bPhaScaledValue++;
-
-                            if (bPhaScaledValue > _height || bPhaScaledValue == 0) Console.WriteLine($"BPHA {bPhaValue}, {bPhaScaledValue}");
-                            color = analysisPhaImage[x, _height - bPhaScaledValue];
-
-                            analysisPhaImage[x, _height - bPhaScaledValue] = Color.FromRgb(color.R, color.G, 255);
-
-                            #endregion
+                            scaled = PhaHeightCalculate(bPha[x, (int)y] + phaOffset);
+                            color = analysisPhaImage[x, _height - scaled];
+                            analysisPhaImage[x, _height - scaled] = new Rgb48(color.R, color.G, 65535);
 
                             #endregion
                         }
                     }
 
+                    Console.ForegroundColor = ConsoleColor.White;
                     Console.WriteLine("Saving");
 
                     analysisMagImage.SaveAsync($"Images/{_name}/analysis_Mag.png");
@@ -458,20 +452,64 @@ internal static class Program
                     break;
                 }
             }
-           
-            if (_keys.Length == 1 || _keys is ['D', 'A'])
-            {
-                Console.WriteLine("Done");
-                return;
-            }
+
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine("Done");
+
+            Console.ReadKey();
             
-            _keys = _keys[1..];
+            Console.Clear();
 
         }
+
     }
 
     //===============================================================================\\
 
+    #region Helpers
+
+    private static int MagHeightCalculate(double input)
+    {
+        var scaledValue = (int)Math.Floor(Math.Log(input, _magLogBase));
+        if (scaledValue == int.MinValue) scaledValue = 0;
+        if (scaledValue < 0)
+        {
+            Console.Error.WriteLine("LOW Scaled Mag");
+            scaledValue = 0;
+        }
+        scaledValue++;
+
+        if (scaledValue > _height) Console.Error.WriteLine($"HIGH Scaled Mag. input: {input}, scaled: {scaledValue}");
+        
+        return scaledValue;
+    }
+    
+    private static int PhaHeightCalculate(double input)
+    {
+        var scaledValue = (int)Math.Floor(Math.Log(input, _phaLogBase));
+        if (scaledValue == int.MinValue) scaledValue = 0;
+        if (scaledValue < 0)
+        {
+            Console.Error.WriteLine("LOW Scaled Pha");
+            scaledValue = 0;
+        }
+        scaledValue++;
+
+        if (scaledValue > _height) Console.Error.WriteLine($"HIGH Scaled Pha. input: {input}, scaled: {scaledValue}");
+
+        return scaledValue;
+    }
+    
+    private static void SpanInsert(Span<byte> target, Span<byte> value, int index)
+    {
+        for (var i = 0; i < value.Length; i++)
+        {
+            target[i + index] = value[i];
+        }
+    }
+
+    #endregion
+    
     #region FFTs
         
     private static async Task<FFTData> FFT3Channel2D(FFTData data, int width, int height)
@@ -498,6 +536,7 @@ internal static class Program
 
         if (ParalellFFT)
         {
+            Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine("FFTs");
 
             var rTask = new Task<Complex[][]>(() =>
@@ -525,15 +564,18 @@ internal static class Program
             await Task.WhenAll(new Task[] { rTask, gTask, bTask });
 
             Console.WriteLine("FFTs Complete");
+            Console.ForegroundColor = ConsoleColor.White;
         }
         else
         {
+            Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine("FFT R");
             FourierTransform2.FFT2(rData, FourierTransform.Direction.Forward);
             Console.WriteLine("FFT G");
             FourierTransform2.FFT2(gData, FourierTransform.Direction.Forward);
             Console.WriteLine("FFT B");
             FourierTransform2.FFT2(bData, FourierTransform.Direction.Forward);
+            Console.ForegroundColor = ConsoleColor.White;
         }
 
 
@@ -602,6 +644,7 @@ internal static class Program
         
         if (ParalellFFT)
         {
+            Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine("iFFTs");
 
             var rTask = new Task<Complex[][]>(() =>
@@ -629,15 +672,19 @@ internal static class Program
             await Task.WhenAll(new Task[] { rTask, gTask, bTask });
 
             Console.WriteLine("iFFTs Complete");
+            
+            Console.ForegroundColor = ConsoleColor.White;
         }
         else
         {
+            Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine("iFFT R");
             FourierTransform2.FFT2(rData, FourierTransform.Direction.Backward);
             Console.WriteLine("iFFT G");
             FourierTransform2.FFT2(gData, FourierTransform.Direction.Backward);
             Console.WriteLine("iFFT B");
             FourierTransform2.FFT2(bData, FourierTransform.Direction.Backward);
+            Console.ForegroundColor = ConsoleColor.White;
         }
         
 
@@ -695,18 +742,6 @@ internal static class Program
     }
     #endregion
 
-    #region Helpers
-
-    private static void SpanInsert(Span<byte> target, Span<byte> value, int index)
-    {
-        for (var i = 0; i < value.Length; i++)
-        {
-            target[i + index] = value[i];
-        }
-    }
-
-    #endregion
-    
     private struct FFTData
     {
         private readonly Complex[,] _empty = new Complex[_width, _height];
