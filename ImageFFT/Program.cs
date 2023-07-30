@@ -413,15 +413,15 @@ internal static class Program
 
                             var scaled = MagHeightCalculate(rMag[x, (int)y] + 1);
                             var color = analysisMagImage[x, _height - scaled];
-                            analysisMagImage[x, _height - scaled] = new Rgb48(65535, color.G, color.B);
+                            analysisMagImage[x, _height - scaled] = new Rgb48((ushort)((float)color.R / 2 + 32767), color.G, color.B);
 
                             scaled = MagHeightCalculate(gMag[x, (int)y] + 1);
                             color = analysisMagImage[x, _height - scaled];
-                            analysisMagImage[x, _height - scaled] = new Rgb48(color.R, 65535, color.B);
+                            analysisMagImage[x, _height - scaled] = new Rgb48(color.R, (ushort)((float)color.G / 2 + 32767), color.B);
 
                             scaled = MagHeightCalculate(bMag[x, (int)y] + 1);
                             color = analysisMagImage[x, _height - scaled];
-                            analysisMagImage[x, _height - scaled] = new Rgb48(color.R, color.G, 65535);
+                            analysisMagImage[x, _height - scaled] = new Rgb48(color.R, color.G, (ushort)((float)color.B / 2 + 32767));
 
                             #endregion
 
@@ -429,15 +429,15 @@ internal static class Program
 
                             scaled = PhaHeightCalculate(rPha[x, (int)y] + phaOffset);
                             color = analysisPhaImage[x, _height - scaled];
-                            analysisPhaImage[x, _height - scaled] = new Rgb48(65535, color.G, color.B);
+                            analysisPhaImage[x, _height - scaled] = new Rgb48((ushort)((float)color.R / 2 + 32767), color.G, color.B);
 
                             scaled = PhaHeightCalculate(gPha[x, (int)y] + phaOffset);
                             color = analysisPhaImage[x, _height - scaled];
-                            analysisPhaImage[x, _height - scaled] = new Rgb48(color.R, 65535, color.B);
+                            analysisPhaImage[x, _height - scaled] = new Rgb48(color.R, (ushort)((float)color.G / 2 + 32767), color.B);
 
                             scaled = PhaHeightCalculate(bPha[x, (int)y] + phaOffset);
                             color = analysisPhaImage[x, _height - scaled];
-                            analysisPhaImage[x, _height - scaled] = new Rgb48(color.R, color.G, 65535);
+                            analysisPhaImage[x, _height - scaled] = new Rgb48(color.R, color.G, (ushort)((float)color.B / 2 + 32767));
 
                             #endregion
                         }
@@ -458,6 +458,9 @@ internal static class Program
 
             Console.ReadKey();
             
+            Console.Clear();
+            Console.CursorTop = 0;
+            Console.CursorLeft = 0;
             Console.Clear();
 
         }
