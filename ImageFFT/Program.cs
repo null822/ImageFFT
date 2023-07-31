@@ -19,7 +19,8 @@ internal static class Program
     private static int _height;
 
     private static double _magLogBase;
-    private static double _phaLogBase;
+    private static double _phaAdd;
+    private static double _phaMul;
 
     private static string _name = "";
     
@@ -394,16 +395,18 @@ internal static class Program
 
 
                     var magMax = Math.Max(Math.Max(rMag.Max(), gMag.Max()), bMag.Max());
-
-                    var phaOffset = -Math.Min(Math.Min(rPha.Min(), gPha.Min()), bPha.Min()) + 1;
-                    var phaMax = Math.Max(Math.Max(rPha.Max(), gPha.Max()), bPha.Max()) + phaOffset;
-
+                    
                     _magLogBase = Math.Pow(magMax, 1d / (_height - 1));
-                    _phaLogBase = Math.Pow(phaMax, 1d / (_height - 1));
+                    
+                    var phaMin = Math.Min(Math.Min(rPha.Min(), gPha.Min()), bPha.Min());
+                    var phaMax = Math.Max(Math.Max(rPha.Max(), gPha.Max()), bPha.Max()) + -phaMin;
+
+                    _phaAdd = -phaMin;
+                    _phaMul = (_height - 1) / phaMax;
 
                     var analysisMagImage = new Image<Rgb48>(_width, _height, new Rgb48(0, 0, 0));
                     var analysisPhaImage = new Image<Rgb48>(_width, _height, new Rgb48(0, 0, 0));
-
+                    
                     Console.ForegroundColor = ConsoleColor.Red;
                     for (var x = 0; x < (float)_width; x++)
                     {
@@ -411,48 +414,56 @@ internal static class Program
                         {
                             #region Magnitude
 
-                            var scaled = MagHeightCalculate(rMag[x, (int)y] + 1);
-                            var color = analysisMagImage[x, _height - scaled];
-                            analysisMagImage[x, _height - scaled] = new Rgb48((ushort)((float)color.R / 2 + 32767), color.G, color.B);
+                            var scaled = MagHeightCalculate(rMag[x, (int)y] + 1); // get scaled Y
+                            var color = analysisMagImage[x, scaled]; // get color from image at that coord
+                            analysisMagImage[x, scaled] = new Rgb48((ushort)((float)color.R / 2 + 32767), color.G, color.B); // mix colors
+                            
 
                             scaled = MagHeightCalculate(gMag[x, (int)y] + 1);
-                            color = analysisMagImage[x, _height - scaled];
-                            analysisMagImage[x, _height - scaled] = new Rgb48(color.R, (ushort)((float)color.G / 2 + 32767), color.B);
+                            color = analysisMagImage[x, scaled];
+                            analysisMagImage[x, scaled] = new Rgb48(color.R, (ushort)((float)color.G / 2 + 32767), color.B);
 
                             scaled = MagHeightCalculate(bMag[x, (int)y] + 1);
-                            color = analysisMagImage[x, _height - scaled];
-                            analysisMagImage[x, _height - scaled] = new Rgb48(color.R, color.G, (ushort)((float)color.B / 2 + 32767));
+                            color = analysisMagImage[x, scaled];
+                            analysisMagImage[x, scaled] = new Rgb48(color.R, color.G, (ushort)((float)color.B / 2 + 32767));
 
                             #endregion
 
                             #region Phase
 
-                            scaled = PhaHeightCalculate(rPha[x, (int)y] + phaOffset);
-                            color = analysisPhaImage[x, _height - scaled];
-                            analysisPhaImage[x, _height - scaled] = new Rgb48((ushort)((float)color.R / 2 + 32767), color.G, color.B);
+                            scaled = PhaHeightCalculate(rPha[x, (int)y]);
+                            color = analysisPhaImage[x, scaled];
+                            analysisPhaImage[x, scaled] = new Rgb48((ushort)((float)color.R / 2 + 32767), color.G, color.B);
 
-                            scaled = PhaHeightCalculate(gPha[x, (int)y] + phaOffset);
-                            color = analysisPhaImage[x, _height - scaled];
-                            analysisPhaImage[x, _height - scaled] = new Rgb48(color.R, (ushort)((float)color.G / 2 + 32767), color.B);
+                            scaled = PhaHeightCalculate(gPha[x, (int)y]);
+                            color = analysisPhaImage[x, scaled];
+                            analysisPhaImage[x, scaled] = new Rgb48(color.R, (ushort)((float)color.G / 2 + 32767), color.B);
 
-                            scaled = PhaHeightCalculate(bPha[x, (int)y] + phaOffset);
-                            color = analysisPhaImage[x, _height - scaled];
-                            analysisPhaImage[x, _height - scaled] = new Rgb48(color.R, color.G, (ushort)((float)color.B / 2 + 32767));
+                            scaled = PhaHeightCalculate(bPha[x, (int)y]);
+                            color = analysisPhaImage[x, scaled];
+                            analysisPhaImage[x, scaled] = new Rgb48(color.R, color.G, (ushort)((float)color.B / 2 + 32767));
 
                             #endregion
                         }
                     }
-
+                    
                     Console.ForegroundColor = ConsoleColor.White;
                     Console.WriteLine("Saving");
-
-                    analysisMagImage.SaveAsync($"Images/{_name}/analysis_Mag.png");
-                    analysisPhaImage.SaveAsync($"Images/{_name}/analysis_Pha.png");
-
+                    
+                    MultiImageSave(new[]
+                    {
+                        analysisMagImage,
+                        analysisPhaImage
+                    }, new[]
+                    {
+                        $"Images/{_name}/analysis_Mag.png",
+                        $"Images/{_name}/analysis_Pha.png"
+                    });
+                    
                     break;
                 }
             }
-
+            
             Console.ForegroundColor = ConsoleColor.White;
             Console.WriteLine("Done");
 
@@ -477,30 +488,45 @@ internal static class Program
         if (scaledValue == int.MinValue) scaledValue = 0;
         if (scaledValue < 0)
         {
-            Console.Error.WriteLine("LOW Scaled Mag");
+            Console.Error.WriteLine($"LOW Scaled Mag. input: {input}, scaled: {scaledValue}");
             scaledValue = 0;
         }
         scaledValue++;
 
         if (scaledValue > _height) Console.Error.WriteLine($"HIGH Scaled Mag. input: {input}, scaled: {scaledValue}");
         
-        return scaledValue;
+        return _height - scaledValue;
     }
     
     private static int PhaHeightCalculate(double input)
     {
-        var scaledValue = (int)Math.Floor(Math.Log(input, _phaLogBase));
+        var scaledValue = (int)Math.Floor((input + _phaAdd) * _phaMul);
         if (scaledValue == int.MinValue) scaledValue = 0;
         if (scaledValue < 0)
         {
-            Console.Error.WriteLine("LOW Scaled Pha");
+            Console.Error.WriteLine($"LOW Scaled Pha. input: {input}, scaled: {scaledValue}");
             scaledValue = 0;
         }
         scaledValue++;
 
         if (scaledValue > _height) Console.Error.WriteLine($"HIGH Scaled Pha. input: {input}, scaled: {scaledValue}");
 
-        return scaledValue;
+        return _height - scaledValue;
+    }
+
+    private static async void MultiImageSave(IEnumerable<Image<Rgb48>> images, IReadOnlyList<string> paths)
+    {
+        var enumerable = images as Image<Rgb48>[] ?? images.ToArray();
+        var tasks = new Task[enumerable.Length];
+        var i = 0;
+        foreach (var image in enumerable)
+        {
+            tasks[i] = image.SaveAsync(paths[i]);
+
+            i++;
+        }
+
+        await Task.WhenAll(tasks);
     }
     
     private static void SpanInsert(Span<byte> target, Span<byte> value, int index)
